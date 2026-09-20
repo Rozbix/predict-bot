@@ -1,4 +1,5 @@
-name = "nerkh-predict-bot"
+# wrangler.toml
+name = 'predict-bot'
 main = "src/index.js"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
