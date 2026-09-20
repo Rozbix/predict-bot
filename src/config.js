@@ -13,23 +13,35 @@
 export const SYMBOLS = {
   usd: {
     title: 'دلار', emoji: '💵', unit: 'تومان', market: 'domestic', decimals: 0,
-    tolerancePct: 1.5,           // خطای بالاتر از این درصد ⇒ امتیاز دقت صفر
-    source: { sql: 'SELECT price, updated_at AS ts FROM prices WHERE symbol = ? ORDER BY updated_at DESC LIMIT 1', args: ['USD'] },
+    tolerancePct: 1.5,
+    source: { 
+      sql: "SELECT CAST(REPLACE(price, ',', '') AS REAL) AS price, updated_at AS ts FROM market_prices WHERE symbol_key = ? ORDER BY updated_at DESC LIMIT 1", 
+      args: ['usd'] 
+    },
   },
   gold: {
     title: 'طلا ۱۸ عیار', emoji: '🪙', unit: 'تومان', market: 'domestic', decimals: 0,
     tolerancePct: 1.5,
-    source: { sql: 'SELECT price, updated_at AS ts FROM prices WHERE symbol = ? ORDER BY updated_at DESC LIMIT 1', args: ['GOLD18'] },
+    source: { 
+      sql: "SELECT CAST(REPLACE(price, ',', '') AS REAL) AS price, updated_at AS ts FROM market_prices WHERE symbol_key = ? ORDER BY updated_at DESC LIMIT 1", 
+      args: ['gold_18k'] // 👈 نام دقیق symbol_key طلا ۱۸ عیار در جدول market_prices شما
+    },
   },
   coin: {
     title: 'سکه امامی', emoji: '🏅', unit: 'تومان', market: 'domestic', decimals: 0,
     tolerancePct: 1.5,
-    source: { sql: 'SELECT price, updated_at AS ts FROM prices WHERE symbol = ? ORDER BY updated_at DESC LIMIT 1', args: ['COIN'] },
+    source: { 
+      sql: "SELECT CAST(REPLACE(price, ',', '') AS REAL) AS price, updated_at AS ts FROM market_prices WHERE symbol_key = ? ORDER BY updated_at DESC LIMIT 1", 
+      args: ['coin_emami'] // 👈 نام دقیق symbol_key سکه امامی در جدول market_prices شما
+    },
   },
   xau: {
     title: 'اونس طلا', emoji: '🥇', unit: 'دلار', market: 'global', decimals: 2,
     tolerancePct: 1,
-    source: { sql: 'SELECT price, updated_at AS ts FROM prices WHERE symbol = ? ORDER BY updated_at DESC LIMIT 1', args: ['XAUUSD'] },
+    source: { 
+      sql: "SELECT CAST(REPLACE(price, ',', '') AS REAL) AS price, updated_at AS ts FROM market_prices WHERE symbol_key = ? ORDER BY updated_at DESC LIMIT 1", 
+      args: ['gold_ounce'] // 👈 نام دقیق symbol_key اونس طلا در جدول market_prices شما
+    },
   },
 };
 
