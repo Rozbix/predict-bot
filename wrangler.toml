@@ -1,10 +1,9 @@
-# wrangler.toml
-name = 'predict-bot'
+name = "predict-bot"
 main = "src/index.js"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Cron هر دقیقه:  کارهای زمان‌بندی‌شده + ارسال صف اعلان‌ها + ساخت کارت‌ها
+# Cron هر دقیقه: کارهای زمان‌بندی‌شده + ارسال صف اعلان‌ها + ساخت کارت‌ها
 [triggers]
 crons = ["* * * * *"]
 
@@ -16,13 +15,12 @@ binding = "BROWSER"
 
 [vars]
 # ---- مقادیر غیرمحرمانه (در صورت نیاز ویرایش کنید) ----
-ADMIN_IDS = "telegram:37807935,bale:118310586"
 TELEGRAM_BOT_USERNAME = "pishbini_gheymat_bot"
-BALE_BOT_USERNAME = "pishbini_gheymat_bot"                 # مثال: nerkhemroozchand_predict_bot  (بدون @)
+BALE_BOT_USERNAME = "pishbini_gheymat_bot"   # بدون @
 CHANNEL_TELEGRAM = "@nerkhemroozchand" # کانال تلگرام (ربات باید ادمین کانال باشد)
-CHANNEL_BALE = "@nerkhemroozchand"                      # کانال بله (مثلاً @nerkhemroozchand) ؛ خالی = غیرفعال
+CHANNEL_BALE = "@nerkhemroozchand"      # خالی = غیرفعال
 REQUIRE_CHANNEL_JOIN = "true"          # عضویت اجباری در کانال برای ثبت پیش‌بینی
-ADMIN_IDS = ""                         # مثال: telegram:123456789,bale:987654321
+ADMIN_IDS = "telegram:37807935,bale:118310586"   # قالب: پلتفرم:شناسه‌ی عددی، با کاما جدا
 PREMIUM_CONTACT = ""                   # آیدی پشتیبانی برای خرید پریمیوم، مثلاً @support
 
 # ---- مقادیر محرمانه با این دستورها ست می‌شوند (در README توضیح داده شده) ----
