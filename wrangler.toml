@@ -16,6 +16,7 @@ binding = "BROWSER"
 
 [vars]
 # ---- مقادیر غیرمحرمانه (در صورت نیاز ویرایش کنید) ----
+ADMIN_IDS = "telegram:37807935,bale:118310586"
 TELEGRAM_BOT_USERNAME = "pishbini_gheymat_bot"
 BALE_BOT_USERNAME = "pishbini_gheymat_bot"                 # مثال: nerkhemroozchand_predict_bot  (بدون @)
 CHANNEL_TELEGRAM = "@nerkhemroozchand" # کانال تلگرام (ربات باید ادمین کانال باشد)
