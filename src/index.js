@@ -42,8 +42,8 @@ export default {
     if (parts[0] === 'admin') {
       const key = url.searchParams.get('key') || req.headers.get('X-Admin-Key');
       if (!env.ADMIN_KEY || key !== env.ADMIN_KEY) return new Response('forbidden', { status: 403 });
-      const db = makeDb(env);
       try {
+        const db = makeDb(env);
         if (parts[1] === 'init') return json({ ok: true, statements: await initSchema(db) });
         if (parts[1] === 'tables') {
           const t = await db.all(`SELECT name,sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`);
@@ -56,12 +56,30 @@ export default {
           for (const k of Object.keys(SYMBOLS)) out[k] = await getPrice(db, k).catch((e) => 'ERROR: ' + e.message);
           return json(out);
         }
+        if (parts[1] === 'webhookinfo') {                   // وضعیت وب‌هوک و اعتبار توکن‌ها
+          const res = {};
+          for (const p of ['telegram', 'bale']) {
+            const token = p === 'telegram' ? env.TELEGRAM_BOT_TOKEN : env.BALE_BOT_TOKEN;
+            if (!token) { res[p] = 'توکن تنظیم نشده'; continue; }
+            const P = api(env, p);
+            const me = await P.call('getMe'), wi = await P.call('getWebhookInfo');
+            res[p] = { token_ok: !!me.ok, bot: me.result?.username, getMe_error: me.ok ? undefined : me.description,
+              webhook_url_set: !!wi.result?.url, pending_updates: wi.result?.pending_update_count,
+              last_error_message: wi.result?.last_error_message, last_error_date: wi.result?.last_error_date, raw: wi.ok ? undefined : wi };
+          }
+          return json(res);
+        }
         if (parts[1] === 'setup') {
+          if (!/^[A-Za-z0-9_-]{1,200}$/.test(env.WEBHOOK_SECRET || '')) {
+            return json({ ok: false, error: 'WEBHOOK_SECRET نامعتبر یا خالی است. فقط حروف انگلیسی، عدد، _ و - مجاز است (بدون فاصله/نمادهای دیگر). آن را دوباره با wrangler secret put WEBHOOK_SECRET ست کنید.' }, 400);
+          }
           const res = {};
           for (const p of ['telegram', 'bale']) {
             const token = p === 'telegram' ? env.TELEGRAM_BOT_TOKEN : env.BALE_BOT_TOKEN;
             if (!token) { res[p] = 'توکن تنظیم نشده (رد شد)'; continue; }
             const P = api(env, p);
+            const me = await P.call('getMe');
+            if (!me.ok) { res[p] = { ok: false, error: 'توکن نامعتبر است (getMe ناموفق): ' + me.description }; continue; }
             const hook = `${url.origin}/webhook/${p}/${env.WEBHOOK_SECRET}`;
             res[p] = {
               setWebhook: await P.call('setWebhook', p === 'telegram'
@@ -79,7 +97,7 @@ export default {
           return json(res);
         }
       } catch (e) { return json({ ok: false, error: e.message }, 500); }
-      return json({ routes: ['init', 'setup', 'tables', 'prices', 'tick'] });
+      return json({ routes: ['init', 'setup', 'webhookinfo', 'tables', 'prices', 'tick'] });
     }
     return new Response('nerkh predict bot ✅', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   },
