@@ -12,12 +12,27 @@ import { outboxStmt } from './outbox.js';
 
 const BTN = {
   predict: '🎯 ثبت پیش‌بینی', board: '🏆 لیدربورد', profile: '👤 پروفایل من',
-  invite: '🔗 دعوت دوستان', signal: '📡 سیگنال اجماع', help: 'ℹ️ راهنما',
+  invite: '🔗 دعوت دوستان', signal: '📡 سیگنال اجماع', help: 'ℹ️ راهنما', admin: '🛠 پنل ادمین',
 };
-const MENU = kb.reply([[BTN.predict, BTN.board], [BTN.profile, BTN.invite], [BTN.signal, BTN.help]]);
+const ROWS = [[BTN.predict, BTN.board], [BTN.profile, BTN.invite], [BTN.signal, BTN.help]];
+const menu = (c) => kb.reply(isAdmin(c) ? [...ROWS, [BTN.admin]] : ROWS);
 const SCOPES = [['overall', '🌐 کلی'], ...Object.entries(SYMBOLS).map(([k, s]) => [k, `${s.emoji} ${s.title}`])];
 
 export async function handleUpdate(env, platform, upd) {
+  try { return await handleUpdateInner(env, platform, upd); }
+  catch (e) {
+    console.error('handleUpdate error:', e.stack || e.message);
+    try {                                          // خطا هیچ‌وقت ساکت نماند
+      const f = (upd.callback_query || upd.message)?.from, chat = (upd.callback_query?.message || upd.message)?.chat;
+      if (f && chat && chat.type === 'private') {
+        const admin = (env.ADMIN_IDS || '').split(',').map((x) => x.trim()).includes(`${platform}:${f.id}`);
+        await api(env, platform).sendMessage(chat.id, '⚠️ خطای موقتی رخ داد؛ چند لحظه‌ی دیگر دوباره تلاش کن.' + (admin ? `\n\n🛠 (فقط ادمین)\n${String(e.message).slice(0, 400)}` : ''));
+      }
+    } catch {}
+  }
+}
+
+async function handleUpdateInner(env, platform, upd) {
   const meter = { n: 0 };
   const db = makeDb(env, meter);
   const P = api(env, platform, meter);
@@ -69,10 +84,13 @@ async function onText(c, text) {
     case BTN.invite: return showInvite(c);
     case BTN.signal: return showSignal(c);
     case BTN.help: return showHelp(c);
+    case BTN.admin: return showAdmin(c);
   }
   if (c.user.state === 'guess') return onGuess(c, text);
   if (c.user.state === 'alias_text') return onAliasText(c, text);
-  return send(c, 'از منوی پایین یکی را انتخاب کن 👇', MENU);
+  if (c.user.state === 'admin_premium' && isAdmin(c)) return adminPremiumInput(c, text);
+  if (c.user.state === 'admin_bc' && isAdmin(c)) return adminBroadcastInput(c, text);
+  return send(c, 'از منوی پایین یکی را انتخاب کن 👇', menu(c));
 }
 
 async function onCommand(c, text) {
@@ -83,44 +101,19 @@ async function onCommand(c, text) {
     return send(c,
       `سلام ${c.from.first_name || ''} 👋\nبه مسابقه‌ی پیش‌بینی نرخ روز خوش اومدی!\n\n` +
       `هر روز قیمت «دلار، طلا، سکه و اونس» رو حدس بزن، امتیاز (XP) بگیر، با بقیه رقابت کن و اگه جزو ۱۰٪ برترها بشی نشان 👑 لجندری می‌گیری و «سیگنال اجماع» رو می‌بینی.\n\n` +
-      `برای شروع 🎯 ثبت پیش‌بینی رو بزن.`, MENU);
+      `برای شروع 🎯 ثبت پیش‌بینی رو بزن.`, menu(c));
   }
   if (name === '/help') return showHelp(c);
-  if (name === '/menu' || name === '/cancel') { await setState(c, null); return send(c, 'منوی اصلی 👇', MENU); }
+  if (name === '/menu' || name === '/cancel') { await setState(c, null); return send(c, 'منوی اصلی 👇', menu(c)); }
   if (name === '/profile') return showProfile(c);
+  if (name === '/admin' && isAdmin(c)) return showAdmin(c);
   if (name === '/leaderboard') return showLeaderboard(c, 'overall');
   if (name === '/predict') return showPredictMenu(c);
-  if (!isAdmin(c)) return send(c, 'دستور نامعتبر. از منو استفاده کن 👇', MENU);
+  if (!isAdmin(c)) return send(c, 'دستور نامعتبر. از منو استفاده کن 👇', menu(c));
 
-  if (name === '/premium') {                       // /premium <userId> <days>
-    const id = Number(args[0]), days = Number(args[1]);
-    if (!id || !days) return send(c, 'فرمت: /premium <شناسه‌ی کاربر> <تعداد روز>');
-    const now = Date.now();
-    const ch = await c.db.run('UPDATE users SET premium_until=MAX(?,premium_until)+? WHERE id=?', [now, days * 86400000, id]);
-    if (!ch) return send(c, 'کاربر پیدا نشد.');
-    const u = await c.db.get('SELECT platform,chat_id,premium_until FROM users WHERE id=?', [id]);
-    await c.db.batch([outboxStmt(u.platform, u.chat_id, `⭐ اشتراک پریمیوم شما تا ${jalaliDate(u.premium_until)} فعال شد. «📡 سیگنال اجماع» برایت باز است!`, `prem:${id}:${now}`)]);
-    return send(c, `✅ پریمیوم کاربر ${id} تا ${jalaliDate(u.premium_until)} فعال شد.`);
-  }
-  if (name === '/stats') {
-    const t = tehranNow();
-    const r = await c.db.batch([
-      ['SELECT platform,COUNT(*) n FROM users GROUP BY platform', []],
-      ['SELECT symbol,COUNT(*) n FROM predictions WHERE day=? GROUP BY symbol', [t.day]],
-      ['SELECT COUNT(*) n FROM users WHERE is_legendary=1', []],
-      [`SELECT COUNT(*) n FROM outbox WHERE status='pending'`, []],
-    ]);
-    return send(c, `📈 آمار\nکاربران: ${r[0].rows.map((x) => `${x.platform}=${x.n}`).join(' ، ') || 0}\n` +
-      `پیش‌بینی‌های امروز: ${r[1].rows.map((x) => `${x.symbol}=${x.n}`).join(' ، ') || 0}\nلجندری: ${r[2].rows[0].n}\nصف پیام: ${r[3].rows[0].n}`);
-  }
-  if (name === '/broadcast') {                     // /broadcast متن پیام
-    const body = text.slice(cmd.length).trim();
-    if (!body) return send(c, 'فرمت: /broadcast متن پیام');
-    const ch = await c.db.run(
-      `INSERT OR IGNORE INTO outbox(dedupe_key,platform,chat_id,text,created_at) SELECT 'bc:'||?||':'||id,platform,chat_id,?,? FROM users WHERE is_blocked=0`,
-      [Date.now(), body, Date.now()]);
-    return send(c, `✅ ${ch} پیام در صف ارسال قرار گرفت (حدود ${fmt(Math.ceil(ch / 18))} دقیقه).`);
-  }
+  if (name === '/premium') return grantPremium(c, Number(args[0]), Number(args[1]));      // /premium <شناسه> <روز>
+  if (name === '/stats') return adminStats(c);
+  if (name === '/broadcast') return queueBroadcast(c, text.slice(cmd.length).trim());         // /broadcast متن
   return send(c, 'دستور نامعتبر.');
 }
 
@@ -178,11 +171,11 @@ async function pickSymbol(c, key) {
 
 async function onGuess(c, text) {
   const key = c.user.state_data, sym = SYMBOLS[key];
-  if (!sym) { await setState(c, null); return send(c, 'منوی اصلی 👇', MENU); }
+  if (!sym) { await setState(c, null); return send(c, 'منوی اصلی 👇', menu(c)); }
   const guess = parseNumber(text, sym.decimals > 0);
   if (!guess) return send(c, '⚠️ فقط یک عدد معتبر بفرست (مثلاً ' + fmt(sym.decimals ? 2345.5 : 88450, sym.decimals) + ').');
   const w = windowState(key);
-  if (!w.open) { await setState(c, null); return send(c, '⏱ مهلت ثبت پیش‌بینی تمام شد.', MENU); }
+  if (!w.open) { await setState(c, null); return send(c, '⏱ مهلت ثبت پیش‌بینی تمام شد.', menu(c)); }
   const price = await getPrice(c.db, key).catch(() => null);
   if (!price) return send(c, '⚠️ قیمت لحظه‌ای در دسترس نیست؛ کمی بعد دوباره عدد را بفرست.');
   const dev = (Math.abs(guess - price.price) / price.price) * 100;
@@ -230,18 +223,18 @@ async function afterAlias(c) {
   try { pending = c.user.state === 'alias_choice' || c.user.state === 'alias_text' ? JSON.parse(c.user.state_data || 'null') : null; } catch {}
   if (pending?.key) return savePrediction(c, pending.key, pending.guess, pending.price);
   await setState(c, null);
-  return send(c, `✅ نام نمایشی تو: ${displayName(c.user)}`, MENU);
+  return send(c, `✅ نام نمایشی تو: ${displayName(c.user)}`, menu(c));
 }
 
 async function savePrediction(c, key, guess, priceAtGuess) {
   const sym = SYMBOLS[key], w = windowState(key);
-  if (!w.open) { await setState(c, null); return send(c, '⏱ مهلت ثبت پیش‌بینی تمام شد.', MENU); }
+  if (!w.open) { await setState(c, null); return send(c, '⏱ مهلت ثبت پیش‌بینی تمام شد.', menu(c)); }
   const now = Date.now();
   const res = await c.db.batch([
     [`INSERT OR IGNORE INTO predictions(user_id,symbol,day,guess,price_at_guess,created_at) VALUES(?,?,?,?,?,?)`, [c.user.id, key, w.t.day, guess, priceAtGuess, now]],
     ['UPDATE users SET state=NULL,state_data=NULL WHERE id=?', [c.user.id]],
   ]);
-  if (!res[0].changes) return send(c, '✅ امروز قبلاً برای این نماد حدس زده‌ای.', MENU);
+  if (!res[0].changes) return send(c, '✅ امروز قبلاً برای این نماد حدس زده‌ای.', menu(c));
 
   await countReferral(c);
   const nextRow = Object.keys(SYMBOLS).filter((k) => k !== key && windowState(k).open)
@@ -252,7 +245,7 @@ async function savePrediction(c, key, guess, priceAtGuess) {
     `🖼 کارت اختصاصی پیش‌بینی‌ات تا چند دقیقه‌ی دیگر می‌آید؛ فوروارد کن و دوستانت را به کل‌کل دعوت کن!\n\n` +
     (await consensusText(c, key)),
     nextRow.length ? kb.inline([nextRow]) : undefined);
-  return send(c, 'منوی اصلی 👇', MENU);
+  return send(c, 'منوی اصلی 👇', menu(c));
 }
 
 // دعوت‌ها فقط وقتی «موفق» حساب می‌شوند که کاربر دعوت‌شده اولین پیش‌بینی‌اش را ثبت کند (ضد تقلب)
@@ -364,14 +357,85 @@ function showHelp(c) {
     `(همه‌ی ساعت‌ها به وقت تهران)\n\n` +
     `⭐ امتیاز هر حدس = امتیاز دقت (تا ۱۰۰) + جایزه‌ی رتبه (نفر اول ${fmt(SCORING.rankBonus[0])}، دوم ${fmt(SCORING.rankBonus[1])}، سوم ${fmt(SCORING.rankBonus[2])} — با حداقل ${fmt(SCORING.minParticipantsForRankBonus)} شرکت‌کننده) + ${fmt(SCORING.participationXp)} امتیاز مشارکت.\n\n` +
     `🚫 اگر بازار تعطیل باشد (بدون نوسان)، پیش‌بینی‌های آن روز باطل می‌شود و امتیازی کسر نمی‌شود.\n` +
-    `👑 ${fmt(LEGENDARY.topPct)}٪ برترین‌های ${fmt(LEGENDARY.windowDays)} روز اخیر «لجندری» می‌شوند و سیگنال اجماع را می‌بینند.`, MENU);
+    `👑 ${fmt(LEGENDARY.topPct)}٪ برترین‌های ${fmt(LEGENDARY.windowDays)} روز اخیر «لجندری» می‌شوند و سیگنال اجماع را می‌بینند.`, menu(c));
+}
+
+
+// ---------------- پنل ادمین ----------------
+function showAdmin(c) {
+  if (!isAdmin(c)) return;
+  return send(c, `🛠 پنل ادمین\n\nیکی از گزینه‌ها را انتخاب کن. (دستورهای معادل: /stats ، /premium شناسه روز ، /broadcast متن)`,
+    kb.inline([
+      [{ text: '📈 آمار سیستم', callback_data: 'ad:stats' }],
+      [{ text: '⭐ اعطای پریمیوم', callback_data: 'ad:prem' }, { text: '📣 پیام همگانی', callback_data: 'ad:bc' }],
+    ]));
+}
+
+async function adminStats(c) {
+  const t = tehranNow();
+  const r = await c.db.batch([
+    ['SELECT platform,COUNT(*) n FROM users GROUP BY platform', []],
+    ['SELECT symbol,COUNT(*) n FROM predictions WHERE day=? GROUP BY symbol', [t.day]],
+    ['SELECT COUNT(*) n FROM users WHERE is_legendary=1', []],
+    [`SELECT COUNT(*) n FROM outbox WHERE status='pending'`, []],
+    ['SELECT COUNT(*) n FROM users WHERE is_blocked=1', []],
+  ]);
+  return send(c, `📈 آمار\nکاربران: ${r[0].rows.map((x) => `${x.platform}=${x.n}`).join(' ، ') || 0}\n` +
+    `پیش‌بینی‌های امروز: ${r[1].rows.map((x) => `${x.symbol}=${x.n}`).join(' ، ') || 0}\n` +
+    `لجندری: ${r[2].rows[0].n}\nبلاک‌کرده‌ها: ${r[4].rows[0].n}\nصف پیام (در انتظار): ${r[3].rows[0].n}`);
+}
+
+async function grantPremium(c, id, days) {
+  if (!id || !days || days < 1) return send(c, 'فرمت: /premium <شناسه‌ی کاربر> <تعداد روز>   (شناسه در «👤 پروفایل» کاربر دیده می‌شود)');
+  const now = Date.now();
+  const ch = await c.db.run('UPDATE users SET premium_until=MAX(?,premium_until)+? WHERE id=?', [now, days * 86400000, id]);
+  if (!ch) return send(c, 'کاربر پیدا نشد.');
+  const u = await c.db.get('SELECT platform,chat_id,premium_until FROM users WHERE id=?', [id]);
+  await c.db.batch([outboxStmt(u.platform, u.chat_id, `⭐ اشتراک پریمیوم شما تا ${jalaliDate(u.premium_until)} فعال شد. «📡 سیگنال اجماع» برایت باز است!`, `prem:${id}:${now}`)]);
+  return send(c, `✅ پریمیوم کاربر ${id} تا ${jalaliDate(u.premium_until)} فعال شد.`);
+}
+
+async function queueBroadcast(c, body) {
+  if (!body) return send(c, 'فرمت: /broadcast متن پیام');
+  const now = Date.now();
+  const ch = await c.db.run(
+    `INSERT OR IGNORE INTO outbox(dedupe_key,platform,chat_id,text,created_at) SELECT 'bc:'||?||':'||id,platform,chat_id,?,? FROM users WHERE is_blocked=0`,
+    [now, body, now]);
+  return send(c, `✅ ${fmt(ch)} پیام در صف ارسال قرار گرفت (حدود ${fmt(Math.ceil(ch / 18))} دقیقه).`);
+}
+
+async function adminPremiumInput(c, text) {
+  const [a, b] = text.split(/\s+/).map((x) => Number(parseNumber(x, false)));
+  if (!a || !b) return send(c, '⚠️ دو عدد بفرست: شناسه‌ی کاربر و تعداد روز. مثل: 125 30');
+  await setState(c, null);
+  return grantPremium(c, a, b);
+}
+
+async function adminBroadcastInput(c, text) {
+  await setState(c, 'admin_bc_confirm', text);
+  const n = (await c.db.get('SELECT COUNT(*) n FROM users WHERE is_blocked=0')).n;
+  return send(c, `📣 پیش‌نمایش پیام همگانی (به ${fmt(n)} کاربر):\n\n${text}`,
+    kb.inline([[{ text: '✅ ارسال', callback_data: 'ad:bcgo' }, { text: '❌ انصراف', callback_data: 'cancel' }]]));
+}
+
+async function onAdminCallback(c, act) {
+  if (!isAdmin(c)) return;
+  if (act === 'stats') return adminStats(c);
+  if (act === 'prem') { await setState(c, 'admin_premium'); return send(c, '⭐ شناسه‌ی کاربر و تعداد روز را با فاصله بفرست. مثل: 125 30'); }
+  if (act === 'bc') { await setState(c, 'admin_bc'); return send(c, '📣 متن پیام همگانی را بفرست (قبل از ارسال، پیش‌نمایش می‌بینی):'); }
+  if (act === 'bcgo' && c.user.state === 'admin_bc_confirm') {
+    const body = c.user.state_data;
+    await setState(c, null);
+    return queueBroadcast(c, body);
+  }
 }
 
 // ---------------- دکمه‌های شیشه‌ای ----------------
 async function onCallback(c, cb) {
   await c.P.answerCallback(cb.id);
   const d = cb.data || '';
-  if (d === 'cancel') { await setState(c, null); return send(c, 'انصراف داده شد.', MENU); }
+  if (d.startsWith('ad:')) return onAdminCallback(c, d.slice(3));
+  if (d === 'cancel') { await setState(c, null); return send(c, 'انصراف داده شد.', menu(c)); }
   if (d === 'pm') return showPredictMenu(c);
   if (d === 'inv') return showInvite(c);
   if (d.startsWith('p:')) return pickSymbol(c, d.slice(2));
