@@ -1,0 +1,32 @@
+name = "nerkh-predict-bot"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Cron هر دقیقه: کارهای زمان‌بندی‌شده + ارسال صف اعلان‌ها + ساخت کارت‌ها
+[triggers]
+crons = ["* * * * *"]
+
+# رندر کارت تصویری (Browser Rendering - پلن رایگان: ۱۰ دقیقه در روز).
+# اگر نمی‌خواهید/نمی‌توانید از آن استفاده کنید، این ۲ خط را کامنت کنید؛
+# ربات به‌طور خودکار «کارت متنی» می‌فرستد.
+[browser]
+binding = "BROWSER"
+
+[vars]
+# ---- مقادیر غیرمحرمانه (در صورت نیاز ویرایش کنید) ----
+TELEGRAM_BOT_USERNAME = "nerkhemroozchand_predict_bot"
+BALE_BOT_USERNAME = ""                 # مثال: nerkhemroozchand_predict_bot  (بدون @)
+CHANNEL_TELEGRAM = "@nerkhemroozchand" # کانال تلگرام (ربات باید ادمین کانال باشد)
+CHANNEL_BALE = ""                      # کانال بله (مثلاً @nerkhemroozchand) ؛ خالی = غیرفعال
+REQUIRE_CHANNEL_JOIN = "true"          # عضویت اجباری در کانال برای ثبت پیش‌بینی
+ADMIN_IDS = ""                         # مثال: telegram:123456789,bale:987654321
+PREMIUM_CONTACT = ""                   # آیدی پشتیبانی برای خرید پریمیوم، مثلاً @support
+
+# ---- مقادیر محرمانه با این دستورها ست می‌شوند (در README توضیح داده شده) ----
+# wrangler secret put TURSO_URL
+# wrangler secret put TURSO_AUTH_TOKEN
+# wrangler secret put TELEGRAM_BOT_TOKEN
+# wrangler secret put BALE_BOT_TOKEN
+# wrangler secret put WEBHOOK_SECRET
+# wrangler secret put ADMIN_KEY
