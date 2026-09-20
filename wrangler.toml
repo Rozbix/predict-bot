@@ -15,10 +15,10 @@ binding = "BROWSER"
 
 [vars]
 # ---- مقادیر غیرمحرمانه (در صورت نیاز ویرایش کنید) ----
-TELEGRAM_BOT_USERNAME = "nerkhemroozchand_predict_bot"
-BALE_BOT_USERNAME = ""                 # مثال: nerkhemroozchand_predict_bot  (بدون @)
+TELEGRAM_BOT_USERNAME = "pishbini_gheymat_bot"
+BALE_BOT_USERNAME = "pishbini_gheymat_bot"                 # مثال: nerkhemroozchand_predict_bot  (بدون @)
 CHANNEL_TELEGRAM = "@nerkhemroozchand" # کانال تلگرام (ربات باید ادمین کانال باشد)
-CHANNEL_BALE = ""                      # کانال بله (مثلاً @nerkhemroozchand) ؛ خالی = غیرفعال
+CHANNEL_BALE = "@nerkhemroozchand"                      # کانال بله (مثلاً @nerkhemroozchand) ؛ خالی = غیرفعال
 REQUIRE_CHANNEL_JOIN = "true"          # عضویت اجباری در کانال برای ثبت پیش‌بینی
 ADMIN_IDS = ""                         # مثال: telegram:123456789,bale:987654321
 PREMIUM_CONTACT = ""                   # آیدی پشتیبانی برای خرید پریمیوم، مثلاً @support
