@@ -3,7 +3,7 @@ main = "src/index.js"
 compatibility_date = "2025-06-01"
 compatibility_flags = ["nodejs_compat"]
 
-# Cron هر دقیقه: کارهای زمان‌بندی‌شده + ارسال صف اعلان‌ها + ساخت کارت‌ها
+# Cron هر دقیقه:  کارهای زمان‌بندی‌شده + ارسال صف اعلان‌ها + ساخت کارت‌ها
 [triggers]
 crons = ["* * * * *"]
 
