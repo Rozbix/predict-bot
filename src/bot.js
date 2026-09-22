@@ -87,6 +87,7 @@ async function onText(c, text) {
     case BTN.admin: return showAdmin(c);
   }
   if (c.user.state === 'guess') return onGuess(c, text);
+  if (c.user.state === 'guess_confirm') return onGuessConfirmText(c, text);
   if (c.user.state === 'alias_text') return onAliasText(c, text);
   if (c.user.state === 'admin_premium' && isAdmin(c)) return adminPremiumInput(c, text);
   if (c.user.state === 'admin_bc' && isAdmin(c)) return adminBroadcastInput(c, text);
@@ -179,14 +180,47 @@ async function onGuess(c, text) {
   const price = await getPrice(c.db, key).catch(() => null);
   if (!price) return send(c, '⚠️ قیمت لحظه‌ای در دسترس نیست؛ کمی بعد دوباره عدد را بفرست.');
   const dev = (Math.abs(guess - price.price) / price.price) * 100;
-  if (dev > SCORING.maxDeviationPct) {
-    return send(c, `⚠️ عدد ${fmt(guess, sym.decimals)} با قیمت لحظه‌ای (${fmt(price.price, sym.decimals)}) بیش از ${fmt(SCORING.maxDeviationPct)}٪ فاصله دارد. احتمالاً اشتباه تایپ شده؛ دوباره بفرست.`);
+  if (dev > SCORING.maxDeviationPct) {                // هشدار نرم: رد نمی‌کنیم، فقط تأیید می‌گیریم (شاید غلط تایپی باشد، شاید پیش‌بینی یک جهش واقعی)
+    await setState(c, 'guess_confirm', { key, guess, price: price.price });
+    return send(c,
+      `⚠️ عدد ${fmt(guess, sym.decimals)} با قیمت لحظه‌ای (${fmt(price.price, sym.decimals)} ${sym.unit}) حدود ${fmtPct(dev)} فاصله دارد؛ بیشتر از نوسان معمول امروز.\n` +
+      `ممکن است اشتباه تایپی باشد یا واقعاً همچین جهشی را پیش‌بینی می‌کنی.\n\nثبت شود؟`,
+      kb.inline([[{ text: '✅ بله، ثبت کن', callback_data: 'gc:yes' }, { text: '✏️ عدد را دوباره بفرستم', callback_data: 'gc:no' }]]));
   }
+  return afterGuessOk(c, key, guess, price.price);
+}
+
+async function afterGuessOk(c, key, guess, priceAtGuess) {
   if (!c.user.display_mode) {                        // اولین پیش‌بینی ⇒ انتخاب نحوه‌ی نمایش نام
-    await setState(c, 'alias_choice', { key, guess, price: price.price });
+    await setState(c, 'alias_choice', { key, guess, price: priceAtGuess });
     return askAlias(c);
   }
-  return savePrediction(c, key, guess, price.price);
+  return savePrediction(c, key, guess, priceAtGuess);
+}
+
+function readPendingGuess(c) {
+  try { const p = JSON.parse(c.user.state_data || 'null'); return p?.key ? p : null; } catch { return null; }
+}
+
+async function onGuessConfirmText(c, text) {
+  const pending = readPendingGuess(c);
+  if (!pending) { await setState(c, null); return send(c, 'منوی اصلی 👇', menu(c)); }
+  await setState(c, 'guess', pending.key);            // بازگشت به حالت عادی ثبت حدس برای همین نماد
+  c.user.state_data = pending.key;
+  return onGuess(c, text);
+}
+
+async function onGuessConfirmYes(c) {
+  const pending = readPendingGuess(c);
+  if (!pending) return send(c, 'منوی اصلی 👇', menu(c));
+  return afterGuessOk(c, pending.key, pending.guess, pending.price);
+}
+
+async function onGuessConfirmNo(c) {
+  const pending = readPendingGuess(c);
+  if (!pending) { await setState(c, null); return send(c, 'منوی اصلی 👇', menu(c)); }
+  await setState(c, 'guess', pending.key);
+  return send(c, '🔢 باشه، عدد جدید را بفرست:');
 }
 
 function askAlias(c) {
@@ -434,6 +468,8 @@ async function onAdminCallback(c, act) {
 async function onCallback(c, cb) {
   await c.P.answerCallback(cb.id);
   const d = cb.data || '';
+  if (d === 'gc:yes') return onGuessConfirmYes(c);
+  if (d === 'gc:no') return onGuessConfirmNo(c);
   if (d.startsWith('ad:')) return onAdminCallback(c, d.slice(3));
   if (d === 'cancel') { await setState(c, null); return send(c, 'انصراف داده شد.', menu(c)); }
   if (d === 'pm') return showPredictMenu(c);
