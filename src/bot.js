@@ -12,7 +12,7 @@ import { outboxStmt } from './outbox.js';
 
 const BTN = {
   predict: '🎯 ثبت پیش‌بینی', board: '🏆 لیدربورد', profile: '👤 پروفایل من',
-  invite: '🔗 دعوت دوستان', signal: '📡 سیگنال اجماع', help: 'ℹ️ راهنما', admin: '🛠 پنل ادمین',
+  invite: '🔗 دعوت دوستان', signal: '🔮 پیش‌بینی لجندری‌ها چیه؟', help: 'ℹ️ راهنما', admin: '🛠 پنل ادمین',
 };
 const ROWS = [[BTN.predict, BTN.board], [BTN.profile, BTN.invite], [BTN.signal, BTN.help]];
 const menu = (c) => kb.reply(isAdmin(c) ? [...ROWS, [BTN.admin]] : ROWS);
@@ -69,6 +69,7 @@ const send = (c, text, buttons) => c.P.sendMessage(c.chatId, text, buttons);
 const setState = (c, state, data) =>
   c.db.run('UPDATE users SET state=?,state_data=? WHERE id=?', [state ?? null, data === undefined ? null : typeof data === 'string' ? data : JSON.stringify(data), c.user.id]);
 const isAdmin = (c) => (c.env.ADMIN_IDS || '').split(',').map((s) => s.trim()).includes(`${c.platform}:${c.from.id}`);
+const canSeeSignal = (c) => isAdmin(c) || hasSignalAccess(c.user);   // ادمین‌ها همیشه دسترسی دارند (برای مشاهده/تست)
 const timeLeft = (min) => (min >= 60 ? `${fmt(Math.floor(min / 60))} ساعت و ${fmt(min % 60)} دقیقه` : `${fmt(min)} دقیقه`);
 const hhmm = (s) => s.replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 
@@ -311,7 +312,7 @@ const lockedBox = (c) =>
   `🔒 سیگنال اجماع (میانگین حدس ${fmt(LEGENDARY.topPct)}٪ برترین تحلیل‌گران)\nقفل است — با پریمیوم یا دعوت ${fmt(REFERRAL_UNLOCK)} دوست جدید (${fmt(c.user.referral_count)}/${fmt(REFERRAL_UNLOCK)}) یا ورود به جمع 👑 لجندری‌ها باز می‌شود.`;
 
 async function consensusText(c, key) {
-  if (!hasSignalAccess(c.user)) return lockedBox(c);
+  if (!canSeeSignal(c)) return lockedBox(c);
   const sym = SYMBOLS[key], r = (await consensusFor(c, [key]))[key];
   return r.n >= CONSENSUS_MIN_LEGENDS
     ? `📡 میانگین حدس ${fmt(LEGENDARY.topPct)}٪ برتر: ${fmt(r.a, sym.decimals)} ${sym.unit}`
@@ -319,7 +320,7 @@ async function consensusText(c, key) {
 }
 
 async function showSignal(c) {
-  if (!hasSignalAccess(c.user)) {
+  if (!canSeeSignal(c)) {
     const contact = c.env.PREMIUM_CONTACT ? `\n\n⭐ خرید پریمیوم: ${c.env.PREMIUM_CONTACT}` : '';
     return send(c, lockedBox(c) + contact, kb.inline([[{ text: '🔗 دعوت دوستان', callback_data: 'inv' }]]));
   }
@@ -365,7 +366,7 @@ async function showProfile(c) {
   const text =
     `👤 پروفایل\n\nشناسه: ${u.id}\nنام نمایشی: ${u.display_mode ? displayName(u) : 'هنوز انتخاب نشده'}\nوضعیت: ${status}\n` +
     (l ? `⭐ کل امتیاز: ${fmt(l.xp)} XP\n🏅 رتبه‌ی کلی: ${fmt(pos.rows[0].pos)}\n🎯 میانگین دقت: ${fmt(l.accuracy_sum / l.scored_count)}٪ (${fmt(l.scored_count)} پیش‌بینی)\n` : '⭐ هنوز پیش‌بینی نتیجه‌داری نداری\n') +
-    `🔗 دعوت‌های موفق: ${fmt(u.referral_count)} از ${fmt(REFERRAL_UNLOCK)}\n📡 سیگنال اجماع: ${hasSignalAccess(u) ? 'باز ✅' : 'قفل 🔒'}`;
+    `🔗 دعوت‌های موفق: ${fmt(u.referral_count)} از ${fmt(REFERRAL_UNLOCK)}\n📡 سیگنال اجماع: ${canSeeSignal(c) ? `باز ✅${!hasSignalAccess(u) ? ' (دسترسی ادمین)' : ''}` : 'قفل 🔒'}`;
   return send(c, text, kb.inline([[{ text: '✏️ تغییر نام نمایشی', callback_data: 'al:menu' }]]));
 }
 
