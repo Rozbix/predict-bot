@@ -11,6 +11,12 @@ export function tehranNow(ms = Date.now()) {
   };
 }
 export const hm = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+const FA_DOW = ['یکشنبه', 'دوشنبه', 'سه‌شنبه', 'چهارشنبه', 'پنجشنبه', 'جمعه', 'شنبه'];   // مطابق با اندیس getUTCDay استاندارد جاوااسکریپت
+export const disabledDaysLabel = (dows) => dows.map((d) => FA_DOW[d]).join(' و ');
+export function nextOpenDayName(dows, fromDow) {
+  for (let i = 1; i <= 7; i++) { const d = (fromDow + i) % 7; if (!dows.includes(d)) return FA_DOW[d]; }
+  return '';
+}
 export const addDays = (day, n) => new Date(Date.parse(day + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
 
 const AR = '٠١٢٣٤٥٦٧٨٩', FA = '۰۱۲۳۴۵۶۷۸۹';
