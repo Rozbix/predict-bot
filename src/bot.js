@@ -6,6 +6,7 @@ import {
 } from './config.js';
 import {
   tehranNow, parseNumber, fmt, fmtPct, jalaliDate, jalaliDateFromDay, displayName, hasSignalAccess, medal, cleanAlias, botLink,
+  disabledDaysLabel, nextOpenDayName,
 } from './util.js';
 import { getPrice, windowState } from './market.js';
 import { outboxStmt } from './outbox.js';
@@ -154,7 +155,10 @@ async function pickSymbol(c, key) {
   if (!(await gateOk(c))) return;
   const w = windowState(key);
   if (!w.open) {
-    if (w.reason === 'weekend') return send(c, `🚫 ${w.cfg.label} در شنبه و یکشنبه تعطیل است؛ حدس‌زدن ${sym.title} از دوشنبه ادامه دارد.`);
+    if (w.reason === 'weekend') {
+      const days = disabledDaysLabel(w.cfg.disabledDows), next = nextOpenDayName(w.cfg.disabledDows, w.t.dow);
+      return send(c, `🚫 ${w.cfg.label} روزهای ${days} تعطیل است؛ حدس‌زدن ${sym.title} از ${next} دوباره فعال می‌شود.`);
+    }
     const d = await c.db.get('SELECT status FROM daily_final_prices WHERE symbol=? AND day=?', [key, w.t.day]);
     return send(c, d?.status === 'holiday'
       ? `🚫 امروز ${w.cfg.label} تعطیل تشخیص داده شد و مسابقه‌ی ${sym.title} برگزار نمی‌شود. فردا دوباره!`
@@ -387,8 +391,9 @@ function showHelp(c) {
   const dom = MARKETS.domestic, glob = MARKETS.global;
   return send(c,
     `ℹ️ راهنمای مسابقه\n\n` +
-    `🇮🇷 دلار / طلا / سکه: ثبت حدس تا ${hhmm(dom.closeAt)} — قیمت مرجع ساعت ${hhmm(dom.finalAt)}\n` +
-    `🌍 اونس طلا: ثبت حدس تا ${hhmm(glob.closeAt)} — قیمت مرجع ساعت ${hhmm(glob.finalAt)} (شنبه و یکشنبه تعطیل)\n` +
+    `🇮🇷 دلار / طلا / سکه: ثبت حدس تا ${hhmm(dom.closeAt)} — قیمت مرجع ساعت ${hhmm(dom.finalAt)}` +
+    (dom.disabledDows.length ? ` (${disabledDaysLabel(dom.disabledDows)} تعطیل)` : '') + `\n` +
+    `🌍 اونس طلا: ثبت حدس تا ${hhmm(glob.closeAt)} — قیمت مرجع ساعت ${hhmm(glob.finalAt)} (${disabledDaysLabel(glob.disabledDows)} تعطیل)\n` +
     `(همه‌ی ساعت‌ها به وقت تهران)\n\n` +
     `⭐ امتیاز هر حدس = امتیاز دقت (تا ۱۰۰) + جایزه‌ی رتبه (نفر اول ${fmt(SCORING.rankBonus[0])}، دوم ${fmt(SCORING.rankBonus[1])}، سوم ${fmt(SCORING.rankBonus[2])} — با حداقل ${fmt(SCORING.minParticipantsForRankBonus)} شرکت‌کننده) + ${fmt(SCORING.participationXp)} امتیاز مشارکت.\n\n` +
     `🚫 اگر بازار تعطیل باشد (بدون نوسان)، پیش‌بینی‌های آن روز باطل می‌شود و امتیازی کسر نمی‌شود.\n` +
