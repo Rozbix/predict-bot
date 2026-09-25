@@ -56,6 +56,18 @@ export default {
           for (const k of Object.keys(SYMBOLS)) out[k] = await getPrice(db, k).catch((e) => 'ERROR: ' + e.message);
           return json(out);
         }
+        if (parts[1] === 'daycheck') {                      // ردیابی وضعیت یک نماد در یک روز خاص (برای بررسی تشخیص تعطیلی)
+          const symbol = url.searchParams.get('symbol');     // مثال: gold
+          const day = url.searchParams.get('day') || new Date().toISOString().slice(0, 10);  // فرمت میلادی YYYY-MM-DD
+          if (!SYMBOLS[symbol]) return json({ ok: false, error: `نماد نامعتبر. یکی از: ${Object.keys(SYMBOLS).join(', ')}` }, 400);
+          const [status, snaps, preds, prevFinal] = await db.batch([
+            ['SELECT * FROM daily_final_prices WHERE symbol=? AND day=?', [symbol, day]],
+            ['SELECT slot,price,ts FROM price_snapshots WHERE symbol=? AND day=? ORDER BY slot', [symbol, day]],
+            ['SELECT id,user_id,guess,price_at_guess,status,final_price,error_pct,xp,created_at FROM predictions WHERE symbol=? AND day=? ORDER BY id', [symbol, day]],
+            [`SELECT day,final_price FROM daily_final_prices WHERE symbol=? AND status='final' AND day<? ORDER BY day DESC LIMIT 1`, [symbol, day]],
+          ]);
+          return json({ symbol, day, status: status.rows[0] || null, snapshots: snaps.rows, previous_final: prevFinal.rows[0] || null, predictions: preds.rows });
+        }
         if (parts[1] === 'webhookinfo') {                   // وضعیت وب‌هوک و اعتبار توکن‌ها
           const res = {};
           for (const p of ['telegram', 'bale']) {
@@ -97,7 +109,7 @@ export default {
           return json(res);
         }
       } catch (e) { return json({ ok: false, error: e.message }, 500); }
-      return json({ routes: ['init', 'setup', 'webhookinfo', 'tables', 'prices', 'tick'] });
+      return json({ routes: ['init', 'setup', 'webhookinfo', 'tables', 'prices', 'daycheck', 'tick'] });
     }
     return new Response('nerkh predict bot ✅', { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   },
