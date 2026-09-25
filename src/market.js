@@ -67,30 +67,43 @@ async function takeSnapshot(db, key, t) {
 }
 
 // ---------- تشخیص هوشمند تعطیلی ----------
+// نکته‌ی مهم (ریشه‌ی یک باگ قبلی): اگر قیمت مرجع «روز قبل» هنوز در دیتابیس ثبت نشده باشد (مثلاً اولین‌بار
+// است که این نماد به‌درستی finalize می‌شود)، نباید بازار را خودکار «باز» فرض کنیم؛ در آن حالت فقط بر پایه‌ی
+// ثبات قیمت «همان امروز» تصمیم می‌گیریم. همچنین هر تلاش (حتی بعد از ۱۲:۰۰) یک نمونه‌ی جدید ثبت می‌کند تا اگر
+// داده‌ی صبح ناقص بود، خودش را در تلاش‌های بعدی جبران کند؛ و تا حداکثر ۶۰ دقیقه بعد از پایان مهلت صبر می‌کنیم
+// تا داده‌ی کافی جمع شود، نه اینکه با اولین اجرا و داده‌ی ناقص، فوری تصمیم اشتباه بگیریم.
 async function decideHoliday(env, db, key, t, now) {
   const sym = SYMBOLS[key], cfg = MARKETS[sym.market];
   const cur = await getPrice(db, key);
   if (!cur) return;
   if (cur.ts && now - cur.ts > STALE_MINUTES * 60000) return;   // منبع قیمت کهنه است ⇒ تصمیم‌گیری نکن (احتمال خرابی منبع)
+  await db.run('INSERT OR IGNORE INTO price_snapshots(symbol,day,slot,price,ts) VALUES(?,?,?,?,?)', [key, t.day, t.minutes, cur.price, cur.ts]);
   const [snaps, prev] = await db.batch([
     ['SELECT price FROM price_snapshots WHERE symbol=? AND day=? ORDER BY slot', [key, t.day]],
     [`SELECT final_price FROM daily_final_prices WHERE symbol=? AND status='final' AND day<? ORDER BY day DESC LIMIT 1`, [key, t.day]],
   ]);
-  const prices = snaps.rows.map((r) => r.price).concat(cur.price);
+  const prices = snaps.rows.map((r) => r.price);
   const min = Math.min(...prices), max = Math.max(...prices);
   const rangePct = ((max - min) / min) * 100;
   const prevFinal = prev.rows[0]?.final_price;
-  const movedPct = prevFinal ? (Math.abs(cur.price - prevFinal) / prevFinal) * 100 : Infinity;
-  const closed = rangePct <= cfg.holidayThresholdPct && movedPct <= cfg.holidayThresholdPct;
+  const movedFromPrev = prevFinal ? (Math.abs(cur.price - prevFinal) / prevFinal) * 100 : null;
+
+  const enoughData = prices.length >= 2;                          // حداقل ۲ نمونه (نه فقط قیمت لحظه‌ای) برای اطمینان از ثبات
+  const flatToday = enoughData && rangePct <= cfg.holidayThresholdPct;
+  // اگر قیمت مرجع روز قبل را داریم، مثل قبل هر دو شرط لازم است؛ اگر نداریم، فقط به ثبات همین امروز تکیه می‌کنیم
+  const closed = enoughData && flatToday && (movedFromPrev === null || movedFromPrev <= cfg.holidayThresholdPct);
+  const giveUpAt = hm(cfg.closeAt) + 60;                           // حداکثر ۶۰ دقیقه صبر برای جمع‌شدن داده‌ی کافی
+
   if (closed) {
     const userText = `🚫 بازار ${sym.title} امروز تعطیل تشخیص داده شد (بدون نوسان قیمت).\nپیش‌بینی امروز شما باطل شد و امتیازی کسر نمی‌شود. فردا دوباره حدس بزن! 🎯`;
     const chan = channelTargets(env).map((c) => outboxStmt(c.platform, c.chat,
       `📅 امروز ${cfg.label} تعطیل تشخیص داده شد؛ مسابقه‌ی پیش‌بینی امروز برگزار نمی‌شود.\nفردا حدس بزنید 👇`,
       `holiday:${sym.market}:${t.day}:${c.platform}`, joinButton(env, c.platform)));
     await closeDay(db, key, t.day, 'holiday', 'no_movement', userText, chan);
-  } else {
+  } else if (enoughData || t.minutes >= giveUpAt) {
+    // یا داده‌ی کافی داریم و بازار واقعاً باز بوده، یا مهلت جمع‌آوری داده تمام شده ⇒ همین‌جا تصمیم را قطعی می‌کنیم
     await db.run(`INSERT OR IGNORE INTO daily_final_prices(symbol,day,status,created_at) VALUES(?,?,'open',?)`, [key, t.day, Date.now()]);
-  }
+  } // در غیر این صورت داده کافی نیست و هنوز به مهلت نرسیده‌ایم؛ دقیقه‌ی بعد دوباره تلاش می‌کنیم
 }
 
 // ابطال پیش‌بینی‌های pending و ثبت وضعیت روز
